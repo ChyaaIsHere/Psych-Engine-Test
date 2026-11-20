@@ -108,35 +108,27 @@ jobs:
           haxelib run lime config
 
       - name: Build Android
-        env:
-          cert_pass: nullfunni
-          cert_alias_pass: nullfunni
         run: |
-          # List lib yang ada
-          echo "=== INSTALLED LIBRARIES ==="
-          haxelib list
-          
-          # Build Android
+          if [ ! -f ~/settings.cocoa ]; then
+            printf 'N\nN\nN\nN\n' | haxelib run lime build android -release || true
+          fi
           haxelib run lime build android -release
 
-      - name: List Build Output
-        if: always()
+      - name: Sign APK
         run: |
-          echo "=== APK FILES ==="
-          find . -name "*.apk" -type f 2>/dev/null
-          echo "=== AAB FILES ==="
-          find . -name "*.aab" -type f 2>/dev/null
-          echo "=== EXPORT DIRECTORY ==="
-          if [ -d "export" ]; then
-            find export -type f | head -50
-          fi
+          BT="$ANDROID_HOME/build-tools/30.0.3"
+          APK=$(find export -name "*.apk" | head -1)
+          echo "APK mentah: $APK"
+          keytool -genkeypair -keystore ci.keystore -alias ci -keyalg RSA -keysize 2048 \
+            -validity 10000 -storepass android -keypass android -dname "CN=Psych Engine Port"
+          "$BT/zipalign" -f -p 4 "$APK" aligned.apk
+          "$BT/apksigner" sign --ks ci.keystore --ks-key-alias ci \
+            --ks-pass pass:android --key-pass pass:android \
+            --out PsychEngine.apk aligned.apk
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: androidBuild
-          path: |
-            export/**/*.apk
-            export/**/*.aab
-          if-no-files-found: warn
+          name: PsychEngine-apk
+          path: PsychEngine.apk
+          if-no-files-found: error
