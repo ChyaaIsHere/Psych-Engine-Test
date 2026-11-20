@@ -1,36 +1,45 @@
-name: Build
+name: Buat Apk
 
-# Controls when the action will run.
 on:
-  # Triggers the workflow on push or pull request events but only for the master branch
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches:
+      - main
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
   buildAndroid:
-    name: buildAndroid
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@main
-
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          
+      - name: Patch SUtil (fix private field libraries)
+        run: |
+          FILE=source/backend/SUtil.hx
+          test -f "$FILE" || { echo "SUtil.hx not found."; exit 1; }
+          if ! grep -q '@:access(lime.utils.Assets)' "$FILE"; then
+            sed -i -E '0,/^(final )?class /s//@:access(lime.utils.Assets)\n@:access(openfl.utils.Assets)\n&/' "$FILE"
+          fi
+          echo "---- 15 baris pertama SUtil.hx setelah patch ----"
+          sed -n '1,15p' "$FILE"
+          echo "---- sekitar baris 70 ----"
+          sed -n '65,75p' "$FILE"
+          
       - name: Setup Android NDK
-        uses: nttld/setup-ndk@main
+        uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
           ndk-version: r21e
 
-      - name: Setup Java JDK
-        uses: actions/setup-java@main
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: zulu
           java-version: '11'
 
       - name: Setup Haxe
@@ -38,105 +47,96 @@ jobs:
         with:
           haxe-version: 4.2.5
 
-      - name: Restore Previous Cache
-        id: cache-debug-build-android-restore
-        uses: actions/cache/restore@main
-        with:
-          path: |
-            ~/haxelib
-            ~/.gradle
-            export/release/android/haxe
-            export/release/android/obj
-          key: cache-android-build
-
-      - name: Install Haxelib
+      - name: Install Libraries
         run: |
           haxelib setup ~/haxelib
-          haxelib install hxcpp 4.2.1 > /dev/null
-          haxelib install lime 7.9.0
-          haxelib install openfl 9.1.0
-          haxelib --never install flixel 5.2.2
-          haxelib run lime setup flixel
-          haxelib install flixel-tools 1.5.1
-          haxelib install flixel-ui
-          haxelib install flixel-addons 3.0.2
-          haxelib install tjson
-          haxelib install hxjsonast
-          haxelib install SScript 4.0.1
-          haxelib git hxCodec https://github.com/SPLCoding/hxCodec-but-it-works-xd.git
-          haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc
-          haxelib git linc_luajit https://github.com/Sirox228/linc_luajit
-          haxelib git extension-androidtools https://github.com/MaysLastPlay77/extension-androidtools
-          haxelib install hxcpp-debug-server
-          haxelib git androiddialogs https://github.com/beihu235/AndroidDialogs
-          haxelib git devicelanguage https://github.com/beihu235/devicelanguage
-          haxelib list
+          
+          haxelib install hxcpp 4.2.1 --quiet
+          haxelib install lime 8.0.1 --quiet
+          haxelib install openfl 9.2.2 --quiet
+          haxelib install flixel 5.2.2 --quiet
+          haxelib install flixel-addons 3.0.2 --quiet
+          haxelib install flixel-ui 2.5.0 --quiet
+          
+          haxelib install hscript 2.4.0 --quiet
+          haxelib install hxCodec 2.5.1 --quiet
+          haxelib install polymod 1.5.0 --quiet
+          
+          haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc.git
+          haxelib git linc_luajit https://github.com/superpowers04/linc_luajit.git
+          haxelib git hxvlc https://github.com/MAJigsaw77/hxvlc.git
+          
+          haxelib git extension-androidtools https://github.com/jigsaw-code/extension-androidtools.git || \
+          haxelib git extension-androidtools https://github.com/MAJigsaw77/extension-androidtools.git || \
+          haxelib install extension-androidtools || \
+          echo "Warning: extension-androidtools not found, build might fail"
 
-      - name: Create Version Tag
-        run: echo "${{github.run_id}}" > VERSION
-
-      - name: Configure Android
+      - name: Debug Info
         run: |
+          echo "=== HAXE VERSION ==="
+          haxe --version
+          echo "=== HAXELIB LIST ==="
+          haxelib list
+          echo "=== PROJECT FILES ==="
+          ls -la
+          echo "=== PROJECT.XML CONTENT ==="
+          cat project.xml | grep -E "haxelib|lib" || echo "No project.xml found"
+
+      - name: Setup Android SDK
+        run: |
+          # Install SDK platforms jika diperlukan
+          if [ ! -d "$ANDROID_HOME/platforms/android-30" ]; then
+            echo "Installing Android SDK platform 30..."
+            yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses
+            $ANDROID_HOME/tools/bin/sdkmanager "platforms;android-30" "build-tools;30.0.3"
+          fi
+
+      - name: Configure Lime & Android
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          # Setup lime
           haxelib run lime setup -alias -y
+          
+          # Configure Android paths
           haxelib run lime config ANDROID_SDK $ANDROID_HOME
           haxelib run lime config ANDROID_NDK_ROOT $ANDROID_NDK_HOME
           haxelib run lime config JAVA_HOME $JAVA_HOME
           haxelib run lime config ANDROID_SETUP true
-          haxelib set lime 7.9.0
-          haxelib set openfl 9.1.0
-          haxelib set flixel 5.2.2
-          haxelib set flixel-addons 3.0.2
-          haxelib set hxcpp 4.2.1
-          haxelib set SScript 4.0.1
-          haxelib list
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          
+          echo "=== LIME CONFIG ==="
+          haxelib run lime config
 
-      - name: Building
-        run: haxelib run lime build android -${{ matrix.arch }}
+      - name: Build Android
         env:
           cert_pass: nullfunni
           cert_alias_pass: nullfunni
+        run: |
+          # List lib yang ada
+          echo "=== INSTALLED LIBRARIES ==="
+          haxelib list
+          
+          # Build Android
+          haxelib run lime build android -release
 
-      - name: Clear Previous Cache
-        uses: actions/github-script@main
-        with:
-          script: |
-            try {
-            	const caches = await github.rest.actions.getActionsCacheList({
-            		owner: context.repo.owner,
-            		repo: context.repo.repo,
-            	})
-            	if (typeof caches.data.actions_caches != null && caches.data.actions_caches.length > 0) {
-            		for (const cache of caches.data.actions_caches) {
-            			if (cache.key == "cache-android-build") {
-            				console.log('Clearing ' + cache.key + '...')
-            				await github.rest.actions.deleteActionsCacheById({
-            					owner: context.repo.owner,
-            					repo: context.repo.repo,
-            					cache_id: cache.id,
-            				})
-            				console.log("Previous Cache Cleared!")
-            			}
-            		}
-            	}
-            } catch (error) {
-            	console.log(error.message);
-            }
+      - name: List Build Output
+        if: always()
+        run: |
+          echo "=== APK FILES ==="
+          find . -name "*.apk" -type f 2>/dev/null
+          echo "=== AAB FILES ==="
+          find . -name "*.aab" -type f 2>/dev/null
+          echo "=== EXPORT DIRECTORY ==="
+          if [ -d "export" ]; then
+            find export -type f | head -50
+          fi
 
-      - name: Save Current Cache
-        id: cache-release-build-android-save
-        uses: actions/cache/save@main
-        with:
-          path: |
-            ~/haxelib
-            ~/.gradle
-            export/release/android/haxe
-            export/release/android/obj
-          key: cache-android-build
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@main
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
           name: androidBuild
-          path: export/release/android/bin/app/build/outputs/apk/debug          
+          path: |
+            export/**/*.apk
+            export/**/*.aab
+          if-no-files-found: warn
