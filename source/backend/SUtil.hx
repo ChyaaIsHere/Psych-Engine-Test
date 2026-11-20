@@ -78,14 +78,6 @@ class SUtil
 		            else CoolUtil.browserLoad('https://youtu.be/AmoNoYjJgHs?si=LvgXbRRn7eJlwL0w');
 					System.exit(0);
 				}
-				
-				if (!FileSystem.exists(SUtil.getPath() + 'assets/shared/images/noteSkins') || !FileSystem.exists(SUtil.getPath() + 'assets/shared/images/noteSplashes'))//make sure people use 0.71h assets not old shits
-				{
-					SUtil.applicationAlert('Uncaught Error :(!', "Whoops, seems you didn't update new assets to the .PsychEngine!\nPlease watch the tutorial by pressing OK.");
-					if (DeviceLanguage.getLang() == 'zh') CoolUtil.browserLoad('https://b23.tv/KqRRT8N');
-		            else CoolUtil.browserLoad('https://youtu.be/AmoNoYjJgHs?si=LvgXbRRn7eJlwL0w');
-					System.exit(0);
-				}
 			}
 		}
 		#end
@@ -168,4 +160,4 @@ class SUtil
 			File.saveBytes(savePath, OpenFlAssets.getBytes(copyPath));
 	}
 	#end
-} 
+}
